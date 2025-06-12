@@ -1,42 +1,48 @@
-import pandas as pd
 import numpy as np
-from collections import Counter
+import pandas as pd
 
-def calculate_psi_from_counts(train_labels, test_labels):
-    # Count class frequencies
-    train_counts = Counter(train_labels)
-    test_counts = Counter(test_labels)
+def psi_from_confusion_matrices(train_cm, test_cm, class_labels=None, epsilon=1e-6):
+    """
+    Compute PSI from confusion matrices of train and test sets, with class labels.
 
-    # Get all classes
-    all_classes = sorted(set(train_counts) | set(test_counts))
+    Parameters:
+        train_cm (ndarray): Confusion matrix for train (actual values by rows)
+        test_cm (ndarray): Confusion matrix for test
+        class_labels (list): Optional list of class names (e.g., ['A', 'B', 'C'])
+        epsilon (float): Small value to prevent division/log errors
 
-    # Initialize results
-    result = []
+    Returns:
+        psi_df (DataFrame): PSI per class with counts and ratios
+        total_psi (float): Total aggregated PSI value
+    """
+    # Step 1: Get class-wise actual counts (sum of rows)
+    train_counts = np.sum(train_cm, axis=1)
+    test_counts = np.sum(test_cm, axis=1)
 
-    total_train = sum(train_counts.values())
-    total_test = sum(test_counts.values())
+    # Step 2: Normalize to get distributions
+    train_dist = train_counts / train_counts.sum()
+    test_dist = test_counts / test_counts.sum()
 
-    for cls in all_classes:
-        train_count = train_counts.get(cls, 0)
-        test_count = test_counts.get(cls, 0)
+    # Step 3: Create class labels if not provided
+    num_classes = len(train_counts)
+    if class_labels is None:
+        class_labels = [f"Class {i}" for i in range(num_classes)]
 
-        train_ratio = train_count / total_train if total_train else 0
-        test_ratio = test_count / total_test if total_test else 0
+    # Step 4: Calculate PSI
+    psi_values = []
+    for i, (e, a) in enumerate(zip(train_dist, test_dist)):
+        e += epsilon
+        a += epsilon
+        psi = (e - a) * np.log(e / a)
+        psi_values.append((
+            class_labels[i],
+            train_counts[i],
+            test_counts[i],
+            round(e, 6),
+            round(a, 6),
+            round(psi, 6)
+        ))
 
-        # Avoid log(0)
-        psi = (test_ratio - train_ratio) * np.log((test_ratio + 1e-8) / (train_ratio + 1e-8)) if train_ratio > 0 and test_ratio > 0 else 0
-
-        result.append({
-            "class": cls,
-            "train count": train_count,
-            "test count": test_count,
-            "train ratio": round(train_ratio, 4),
-            "test ratio": round(test_ratio, 4),
-            "psi": round(psi, 6)
-        })
-
-    df = pd.DataFrame(result)
-    total_psi = df['psi'].sum()
-    df.loc['Total'] = ['Total', '', '', '', '', round(total_psi, 6)]
-
-    return df
+    psi_df = pd.DataFrame(psi_values, columns=["Class", "Train Count", "Test Count", "Train Ratio", "Test Ratio", "PSI"]).set_index("Class")
+    total_psi = psi_df["PSI"].sum()
+    return psi_df, total_psi
