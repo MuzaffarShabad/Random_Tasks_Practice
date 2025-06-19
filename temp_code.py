@@ -1,62 +1,71 @@
 import pandas as pd
-from itertools import combinations
 from collections import defaultdict
 import re
 
 def preprocess(text):
-    text = re.sub(r'[^\w\s]', '', text.lower())
+    """Lowercase, remove punctuation, and split text into words."""
+    text = re.sub(r'[^\w\s]', '', str(text).lower())
     return text.split()
 
 def get_exact_ngrams(words, n):
-    return [' '.join(words[i:i+n]) for i in range(len(words)-n+1)]
+    """Generate all n-grams of exact consecutive words."""
+    return [' '.join(words[i:i+n]) for i in range(len(words) - n + 1)]
 
-def build_clusters(texts, n):
-    ngram_to_indices = defaultdict(set)
+def build_exact_ngram_clusters(texts, n):
+    """Cluster texts by exact shared n-grams."""
+    ngram_to_texts = defaultdict(set)
 
+    # Step 1: Map each exact n-gram to the indices of texts that contain it
     for idx, text in enumerate(texts):
         words = preprocess(text)
         ngrams = get_exact_ngrams(words, n)
         for ng in ngrams:
-            ngram_to_indices[ng].add(idx)
+            ngram_to_texts[ng].add(idx)
 
-    # Build clusters from shared n-grams
+    # Step 2: Cluster texts that share the same exact n-gram
     clusters = [-1] * len(texts)
     cluster_id = 0
-
     visited = set()
-    for idx in range(len(texts)):
-        if idx in visited:
-            continue
-        queue = {idx}
-        current_cluster = set()
-        while queue:
-            current = queue.pop()
-            if current in visited:
-                continue
-            visited.add(current)
-            current_cluster.add(current)
-            words = preprocess(texts[current])
-            ngrams = get_exact_ngrams(words, n)
-            for ng in ngrams:
-                queue.update(ngram_to_indices[ng])
 
-        for i in current_cluster:
-            clusters[i] = cluster_id
-        cluster_id += 1
+    for i in range(len(texts)):
+        if i in visited:
+            continue
+
+        matched_group = set()
+        words = preprocess(texts[i])
+        ngrams = get_exact_ngrams(words, n)
+
+        for ng in ngrams:
+            matched_group.update(ngram_to_texts[ng])
+
+        if len(matched_group) > 1:
+            for idx in matched_group:
+                clusters[idx] = cluster_id
+                visited.add(idx)
+            cluster_id += 1
+
+    # Assign "no_match" to texts not in any cluster
+    for i in range(len(clusters)):
+        if clusters[i] == -1:
+            clusters[i] = "no_match"
 
     return clusters
 
-# ---------- Main Program ----------
-def categorize_exact_n_gram(file_path, text_column, n):
+# ----------- MAIN USAGE ---------------
+
+def process_excel(file_path, text_column_name, n):
     df = pd.read_excel(file_path)
-    texts = df[text_column].fillna("").tolist()
-    df['category'] = build_clusters(texts, n)
+    texts = df[text_column_name].fillna("").tolist()
+    df['Category'] = build_exact_ngram_clusters(texts, n)
     return df
 
-# ---------- Example Usage ----------
-file_path = "your_file.xlsx"         # Your Excel file
-text_column = "text"                 # Column name
-n = 7                                # Exact number of consecutive words
+# ----------- Example Execution -----------
 
-result_df = categorize_exact_n_gram(file_path, text_column, n)
-result_df.to_excel("categorized_emails_exact_ngram.xlsx", index=False)
+# Customize this path and column name as per your file
+file_path = "your_excel_file.xlsx"       # e.g. "emails.xlsx"
+text_column_name = "text"                # e.g. "email_text"
+n = 7                                    # consecutive word count to match
+
+df_result = process_excel(file_path, text_column_name, n)
+df_result.to_excel("categorized_output.xlsx", index=False)
+print(df_result[['text', 'Category']])
