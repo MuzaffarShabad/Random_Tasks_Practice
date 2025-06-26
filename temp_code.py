@@ -1,28 +1,31 @@
 import pandas as pd
 
-# Step 1: Original (incomplete) dictionary
-data = {
-    'Name': ['Alice', 'Bob', 'Charlie'],
-    'Marks': [85, 92],            # Shorter
-    'Roll': [11, 12, 13, 14]      # Longer
-}
+def expand_ast_value(data, out_df=True, return_first_only=False):
+    if len(data) == 0:
+        return pd.DataFrame() if out_df else {}
 
-# Step 2: Normalize lengths by padding with None
-max_len = max(len(v) for v in data.values())
+    # Step 1: Remove empty string entries from each list
+    cleaned_data = {
+        k: [val for val in v if val != ''] for k, v in data.items()
+    }
 
-for key in data:
-    current_len = len(data[key])
-    if current_len < max_len:
-        data[key] += [None] * (max_len - current_len)
+    # Step 2: Check if all lists are now empty
+    if all(len(v) == 0 for v in cleaned_data.values()):
+        return pd.DataFrame() if out_df else {}
 
-# Step 3: Convert to DataFrame
-df = pd.DataFrame(data)
+    # Step 3: Find max length of remaining lists
+    max_length = max(len(v) for v in cleaned_data.values())
 
-# Step 4: Add a new column (optional)
-df['Grade'] = df['Marks'].apply(lambda x: 'A' if x is not None and x >= 90 else 'B' if x is not None and x >= 80 else 'C' if x is not None else None)
+    # Step 4: Expand each list
+    expanded_data = {
+        k: v + [v[-1]] * (max_length - len(v)) if v else [None] * max_length
+        for k, v in cleaned_data.items()
+    }
 
-# Step 5: Convert back to dictionary
-result_dict = df.to_dict(orient='list')
+    # Step 5: If return_first_only is True, return only first element per key
+    if return_first_only:
+        first_only_data = {k: v[0] for k, v in expanded_data.items() if v}
+        return first_only_data
 
-print(df)
-print(result_dict)
+    # Step 6: Return DataFrame or expanded dict
+    return pd.DataFrame(expanded_data) if out_df else expanded_data
