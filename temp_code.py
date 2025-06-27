@@ -1,31 +1,72 @@
+from bs4 import BeautifulSoup
 import pandas as pd
+from fuzzywuzzy import process
+from Levenshtein import distance as levenshtein_distance
 
-def expand_ast_value(data, out_df=True, return_first_only=False):
-    if len(data) == 0:
-        return pd.DataFrame() if out_df else {}
+def extract_tables_from_bs(soup, keys, max_dist=2):
+    tables = soup.find_all('table')
+    all_data = {}
 
-    # Step 1: Remove empty string entries from each list
-    cleaned_data = {
-        k: [val for val in v if val != ''] for k, v in data.items()
-    }
+    for table in tables:
+        rows = table.find_all('tr')
+        if not rows:
+            continue
 
-    # Step 2: Check if all lists are now empty
-    if all(len(v) == 0 for v in cleaned_data.values()):
-        return pd.DataFrame() if out_df else {}
+        # Extract text from each cell
+        raw_rows = [
+            [cell.get_text(strip=True) for cell in row.find_all(['td', 'th'])]
+            for row in rows
+        ]
 
-    # Step 3: Find max length of remaining lists
-    max_length = max(len(v) for v in cleaned_data.values())
+        # Remove empty rows
+        raw_rows = [row for row in raw_rows if any(cell.strip() for cell in row)]
 
-    # Step 4: Expand each list
-    expanded_data = {
-        k: v + [v[-1]] * (max_length - len(v)) if v else [None] * max_length
-        for k, v in cleaned_data.items()
-    }
+        if not raw_rows:
+            continue
 
-    # Step 5: If return_first_only is True, return only first element per key
-    if return_first_only:
-        first_only_data = {k: v[0] for k, v in expanded_data.items() if v}
-        return first_only_data
+        # Case 1: Transposed with colon separator (3 columns like Name | : | Vijay)
+        if all(len(row) == 3 and row[1] == ':' for row in raw_rows):
+            raw_rows = [[row[0], row[2]] for row in raw_rows]
 
-    # Step 6: Return DataFrame or expanded dict
-    return pd.DataFrame(expanded_data) if out_df else expanded_data
+        # Case 2: Fully transposed table (2 columns like Name | Vijay)
+        if all(len(row) == 2 for row in raw_rows):
+            row_dict = {row[0].strip(): row[1].strip() for row in raw_rows}
+            all_data.update({k: [v] for k, v in row_dict.items() if v})  # keep 1-row format
+            continue
+
+        # Case 3: Standard row-wise table
+        first_row = raw_rows[0]
+        data_rows = raw_rows[1:]
+
+        # Fuzzy match headers with keys
+        lower_keys = [key.lower() for key in keys]
+        matched_headers = []
+        for header in first_row:
+            best_match, score = process.extractOne(header.lower(), lower_keys)
+            if levenshtein_distance(best_match, header.lower()) <= max_dist:
+                original_key = keys[lower_keys.index(best_match)]
+                matched_headers.append(original_key)
+            else:
+                matched_headers.append(None)
+
+        # Initialize storage
+        table_data = {key: [] for key in matched_headers if key}
+
+        for row in data_rows:
+            if len(row) != len(matched_headers):
+                continue  # Skip rows that don't match column count
+            for idx, cell in enumerate(row):
+                col = matched_headers[idx]
+                if col:
+                    table_data[col].append(cell)
+
+        # Merge with all_data
+        for k, v in table_data.items():
+            if k in all_data:
+                all_data[k].extend(v)
+            else:
+                all_data[k] = v
+
+    # Remove empty columns
+    all_data = {k: v for k, v in all_data.items() if v}
+    return all_data
