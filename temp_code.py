@@ -1,72 +1,41 @@
-from bs4 import BeautifulSoup
-import pandas as pd
-from fuzzywuzzy import process
-from Levenshtein import distance as levenshtein_distance
+import os
+import json
+from datetime import datetime, timedelta
 
-def extract_tables_from_bs(soup, keys, max_dist=2):
-    tables = soup.find_all('table')
-    all_data = {}
+# Replace with actual START_DATE and END_DATE values
+START_DATE = datetime(2023, 1, 1)
+END_DATE = datetime(2023, 1, 5)  # Example
 
-    for table in tables:
-        rows = table.find_all('tr')
-        if not rows:
-            continue
+# Placeholder function for fetch_inquiries
+def fetch_inquiries(start, end, client, grp_ids_set):
+    # Simulate API data
+    return [{"_id": 123, "data": "sample"}]
 
-        # Extract text from each cell
-        raw_rows = [
-            [cell.get_text(strip=True) for cell in row.find_all(['td', 'th'])]
-            for row in rows
-        ]
+# Dummy client and group IDs
+client = None
+grp_ids_set = None
 
-        # Remove empty rows
-        raw_rows = [row for row in raw_rows if any(cell.strip() for cell in row)]
+# Final list to store all inquiries
+all_inquiries = []
 
-        if not raw_rows:
-            continue
+while START_DATE < END_DATE:
+    print(f"Querying for {START_DATE.day}/{START_DATE.month}/{START_DATE.year}")
 
-        # Case 1: Transposed with colon separator (3 columns like Name | : | Vijay)
-        if all(len(row) == 3 and row[1] == ':' for row in raw_rows):
-            raw_rows = [[row[0], row[2]] for row in raw_rows]
+    # Fetch data for one day
+    inquiries = fetch_inquiries(START_DATE, START_DATE + timedelta(days=1), client, grp_ids_set)
 
-        # Case 2: Fully transposed table (2 columns like Name | Vijay)
-        if all(len(row) == 2 for row in raw_rows):
-            row_dict = {row[0].strip(): row[1].strip() for row in raw_rows}
-            all_data.update({k: [v] for k, v in row_dict.items() if v})  # keep 1-row format
-            continue
+    # Append all fetched inquiries to master list
+    all_inquiries.extend(inquiries)
 
-        # Case 3: Standard row-wise table
-        first_row = raw_rows[0]
-        data_rows = raw_rows[1:]
+    # Move to next day
+    START_DATE += timedelta(days=1)
 
-        # Fuzzy match headers with keys
-        lower_keys = [key.lower() for key in keys]
-        matched_headers = []
-        for header in first_row:
-            best_match, score = process.extractOne(header.lower(), lower_keys)
-            if levenshtein_distance(best_match, header.lower()) <= max_dist:
-                original_key = keys[lower_keys.index(best_match)]
-                matched_headers.append(original_key)
-            else:
-                matched_headers.append(None)
+# Define output filename
+output_filename = "all_inquiries.json"
+output_path = os.path.join(".", output_filename)
 
-        # Initialize storage
-        table_data = {key: [] for key in matched_headers if key}
+# Write all inquiries to one single JSON file
+with open(output_path, "w") as f:
+    json.dump(all_inquiries, f, indent=4)
 
-        for row in data_rows:
-            if len(row) != len(matched_headers):
-                continue  # Skip rows that don't match column count
-            for idx, cell in enumerate(row):
-                col = matched_headers[idx]
-                if col:
-                    table_data[col].append(cell)
-
-        # Merge with all_data
-        for k, v in table_data.items():
-            if k in all_data:
-                all_data[k].extend(v)
-            else:
-                all_data[k] = v
-
-    # Remove empty columns
-    all_data = {k: v for k, v in all_data.items() if v}
-    return all_data
+print(f"\n✅ All inquiries written to {output_path}")
