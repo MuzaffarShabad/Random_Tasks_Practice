@@ -1,41 +1,29 @@
 import os
 import json
-from datetime import datetime, timedelta
 
-# Replace with actual START_DATE and END_DATE values
-START_DATE = datetime(2023, 1, 1)
-END_DATE = datetime(2023, 1, 5)  # Example
+# Folder containing your JSON files
+json_folder = './json_data'   # Change this to your folder path
 
-# Placeholder function for fetch_inquiries
-def fetch_inquiries(start, end, client, grp_ids_set):
-    # Simulate API data
-    return [{"_id": 123, "data": "sample"}]
+# Master list to hold all data
+merged_data = []
 
-# Dummy client and group IDs
-client = None
-grp_ids_set = None
+# Loop through all files in the folder
+for filename in os.listdir(json_folder):
+    if filename.endswith('.json'):
+        file_path = os.path.join(json_folder, filename)
+        with open(file_path, 'r') as f:
+            try:
+                data = json.load(f)
+                if isinstance(data, list):
+                    merged_data.extend(data)
+                else:
+                    merged_data.append(data)
+            except Exception as e:
+                print(f"⚠️ Error reading {filename}: {e}")
 
-# Final list to store all inquiries
-all_inquiries = []
+# Save to master.json
+output_file = 'master.json'
+with open(output_file, 'w') as out_f:
+    json.dump(merged_data, out_f, indent=4)
 
-while START_DATE < END_DATE:
-    print(f"Querying for {START_DATE.day}/{START_DATE.month}/{START_DATE.year}")
-
-    # Fetch data for one day
-    inquiries = fetch_inquiries(START_DATE, START_DATE + timedelta(days=1), client, grp_ids_set)
-
-    # Append all fetched inquiries to master list
-    all_inquiries.extend(inquiries)
-
-    # Move to next day
-    START_DATE += timedelta(days=1)
-
-# Define output filename
-output_filename = "all_inquiries.json"
-output_path = os.path.join(".", output_filename)
-
-# Write all inquiries to one single JSON file
-with open(output_path, "w") as f:
-    json.dump(all_inquiries, f, indent=4)
-
-print(f"\n✅ All inquiries written to {output_path}")
+print(f"✅ Merged {len(merged_data)} records into {output_file}")
