@@ -1,33 +1,33 @@
-import os
-import json
-import pandas as pd
+from sklearn.metrics import roc_auc_score, log_loss
+import numpy as np
 
-# Folder where all JSON files are stored
-json_folder = './json_data'  # 🔁 Change to your folder path
+# Example classes
+class_labels = ['amount', 'quantity', 'date', 'other']
 
-all_records = []
+# Assume these are your gold examples and predicted TableEntities
+y_true = []      # actual labels
+y_pred = []      # predicted labels (entity_type)
+y_prob = []      # list of class probability distributions
 
-# Loop over all files in the folder
-for filename in os.listdir(json_folder):
-    if filename.endswith('.json'):
-        filepath = os.path.join(json_folder, filename)
-        with open(filepath, 'r', encoding='utf-8') as f:
-            try:
-                data = json.load(f)
-                if "res" in data and isinstance(data["res"], list):
-                    all_records.extend(data["res"])
-                else:
-                    print(f"Skipping {filename} — no 'res' key or wrong format")
-            except Exception as e:
-                print(f"Error reading {filename}: {e}")
+for example, table_ent in zip(examples, entities):
+    y_true.append(example.label)  # actual
+    y_pred.append(table_ent.entity_type)  # predicted
+    probs = [table_ent.label_probs.get(cls, 0.0) for cls in class_labels]
+    y_prob.append(probs)
 
-# Convert all records into DataFrame
-df = pd.DataFrame(all_records)
+# Convert to numpy arrays
+y_true = np.array(y_true)
+y_prob = np.array(y_prob)
 
-# Optional: Fill missing values
-df.fillna('', inplace=True)
+# Binarize true labels for ROC AUC
+from sklearn.preprocessing import label_binarize
+y_true_bin = label_binarize(y_true, classes=class_labels)
 
-# Save to Excel
-df.to_excel('combined_output.xlsx', index=False)
+# 🔹 Log Loss
+logloss = log_loss(y_true, y_prob, labels=class_labels)
 
-print("✅ All JSON files merged and saved as 'combined_output.xlsx'")
+# 🔹 AUC Score (macro-average for multiclass)
+auc_score = roc_auc_score(y_true_bin, y_prob, average='macro', multi_class='ovr')
+
+print("Log Loss:", logloss)
+print("AUC Score:", auc_score)
