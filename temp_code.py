@@ -1,53 +1,66 @@
-def get_final_table(tables, col_mapping, max_dist=2):
-    all_df = pd.DataFrame()
+import pandas as pd
+from bs4 import BeautifulSoup
+from urllib.parse import unquote
 
+def extract_text_tables_html(json_body, json_subject, col_mapping):
+    # Clean up HTML body
+    json_body = unquote(json_body).replace("+", " ")
+    soup = BeautifulSoup(json_body, "html.parser")
+    json_subject_normalized = json_subject.replace("-", " ")
+
+    # Remove tables for plain text extraction
+    for table in soup.find_all("table"):
+        table.decompose()
+
+    text = soup.get_text(separator="\n").strip()
+    text = text.replace("\t", "\n")
+    text = "\n".join([line.lstrip() for line in text.splitlines()])
+
+    # Extract all tables
+    try:
+        tables = pd.read_html(json_body, header=None)
+    except Exception as ex:  # Raised when no tables are found
+        print(f"No tables found: {ex}")
+        tables = []
+
+    processed_tables = []
     for df in tables:
-        # Ensure columns are numeric indices
-        if 0 not in df.columns:
-            df = pd.concat([pd.DataFrame(data=[df.columns], dtype=str), df], ignore_index=True)
-            df.columns = range(len(df.columns))
-
-        # --- 🔹 Detect horizontal (key-value style) tables ---
-        if df.shape[1] in [2, 3]:  
+        # --- Detect horizontal table (key-value style) ---
+        if df.shape[1] in [2, 3]:
             keys = df.iloc[:, 0].astype(str).str.replace(":", "").str.strip().str.lower()
             values = df.iloc[:, -1].astype(str).str.strip()
             df = pd.DataFrame([values.values], columns=keys.values)
-            all_df = pd.concat([all_df, df], ignore_index=True)
-            continue   # Skip normal processing for horizontal tables
-        # ---------------------------------------------------
 
-        # Try detecting valid columns/rows
-        column_cols = get_valid_cols(
-            list(df.iloc[:, 0].astype(str).str.replace(":", "").str.strip().str.lower()), 
-            max_dist, col_mapping
-        )
-        row_cols = get_valid_cols(
-            list(df.iloc[0].astype(str).str.replace(":", "").str.strip().str.lower()), 
-            max_dist, col_mapping
-        )
+        # --- Extended header scan (up to 5 rows/cols) ---
+        max_check_rows = min(5, df.shape[0])   # check up to 5 rows
+        max_check_cols = min(5, df.shape[1])   # check up to 5 cols
 
-        if len(row_cols) == 0 and len(column_cols) == 0:
-            print("Both row and col are zero")
+        row_cols, header_row_idx = [], None
+        for r in range(max_check_rows):
+            candidate = df.iloc[r, :].astype(str).str.strip().tolist()
+            row_cols = get_valid_cols(candidate, col_mapping)
+            if row_cols:
+                header_row_idx = r
+                break
 
-        elif len(row_cols) < len(column_cols):
-            print("Length of row < col, doing transpose", len(row_cols), len(column_cols))
-            df = df.transpose().reset_index(drop=True)
-            valid_cols = column_cols
-            print("Table after transpose:\n", df)
+        column_cols, header_col_idx = [], None
+        for c in range(max_check_cols):
+            candidate = df.iloc[:, c].astype(str).str.strip().tolist()
+            column_cols = get_valid_cols(candidate, col_mapping)
+            if column_cols:
+                header_col_idx = c
+                break
+
+        # --- Handle detection results ---
+        if row_cols:
+            df.columns = df.iloc[header_row_idx]
+            df = df.drop(index=header_row_idx).reset_index(drop=True)
+        elif column_cols:
+            df.index = df.iloc[:, header_col_idx]
+            df = df.drop(columns=header_col_idx).reset_index(drop=True)
         else:
-            valid_cols = row_cols
+            print("⚠️ No valid headers found in first 5 rows/cols")
 
-        # First row as header
-        df.columns = list(df.iloc[0].astype(str).str.replace(":", "").str.strip().str.lower())
-        df = df[1:].reset_index(drop=True)
+        processed_tables.append(df)
 
-        # Rename + deduplicate
-        rename_cols = get_priority_cols(valid_cols)
-        df = df[list(rename_cols.keys())]
-        df = df.loc[:, ~df.columns.duplicated()]
-        if not df.empty:
-            df.rename(columns=rename_cols, inplace=True)
-
-        all_df = pd.concat([all_df, df], ignore_index=True)
-
-    return all_df.dropna(how='all').reset_index(drop=True).dropna(how='all', axis=1)
+    return json_subject_normalized + text, processed_tables
