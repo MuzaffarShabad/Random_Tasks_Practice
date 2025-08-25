@@ -1,33 +1,53 @@
-from sklearn.metrics import roc_auc_score, log_loss
-import numpy as np
+def get_final_table(tables, col_mapping, max_dist=2):
+    all_df = pd.DataFrame()
 
-# Example classes
-class_labels = ['amount', 'quantity', 'date', 'other']
+    for df in tables:
+        # Ensure columns are numeric indices
+        if 0 not in df.columns:
+            df = pd.concat([pd.DataFrame(data=[df.columns], dtype=str), df], ignore_index=True)
+            df.columns = range(len(df.columns))
 
-# Assume these are your gold examples and predicted TableEntities
-y_true = []      # actual labels
-y_pred = []      # predicted labels (entity_type)
-y_prob = []      # list of class probability distributions
+        # --- 🔹 Detect horizontal (key-value style) tables ---
+        if df.shape[1] in [2, 3]:  
+            keys = df.iloc[:, 0].astype(str).str.replace(":", "").str.strip().str.lower()
+            values = df.iloc[:, -1].astype(str).str.strip()
+            df = pd.DataFrame([values.values], columns=keys.values)
+            all_df = pd.concat([all_df, df], ignore_index=True)
+            continue   # Skip normal processing for horizontal tables
+        # ---------------------------------------------------
 
-for example, table_ent in zip(examples, entities):
-    y_true.append(example.label)  # actual
-    y_pred.append(table_ent.entity_type)  # predicted
-    probs = [table_ent.label_probs.get(cls, 0.0) for cls in class_labels]
-    y_prob.append(probs)
+        # Try detecting valid columns/rows
+        column_cols = get_valid_cols(
+            list(df.iloc[:, 0].astype(str).str.replace(":", "").str.strip().str.lower()), 
+            max_dist, col_mapping
+        )
+        row_cols = get_valid_cols(
+            list(df.iloc[0].astype(str).str.replace(":", "").str.strip().str.lower()), 
+            max_dist, col_mapping
+        )
 
-# Convert to numpy arrays
-y_true = np.array(y_true)
-y_prob = np.array(y_prob)
+        if len(row_cols) == 0 and len(column_cols) == 0:
+            print("Both row and col are zero")
 
-# Binarize true labels for ROC AUC
-from sklearn.preprocessing import label_binarize
-y_true_bin = label_binarize(y_true, classes=class_labels)
+        elif len(row_cols) < len(column_cols):
+            print("Length of row < col, doing transpose", len(row_cols), len(column_cols))
+            df = df.transpose().reset_index(drop=True)
+            valid_cols = column_cols
+            print("Table after transpose:\n", df)
+        else:
+            valid_cols = row_cols
 
-# 🔹 Log Loss
-logloss = log_loss(y_true, y_prob, labels=class_labels)
+        # First row as header
+        df.columns = list(df.iloc[0].astype(str).str.replace(":", "").str.strip().str.lower())
+        df = df[1:].reset_index(drop=True)
 
-# 🔹 AUC Score (macro-average for multiclass)
-auc_score = roc_auc_score(y_true_bin, y_prob, average='macro', multi_class='ovr')
+        # Rename + deduplicate
+        rename_cols = get_priority_cols(valid_cols)
+        df = df[list(rename_cols.keys())]
+        df = df.loc[:, ~df.columns.duplicated()]
+        if not df.empty:
+            df.rename(columns=rename_cols, inplace=True)
 
-print("Log Loss:", logloss)
-print("AUC Score:", auc_score)
+        all_df = pd.concat([all_df, df], ignore_index=True)
+
+    return all_df.dropna(how='all').reset_index(drop=True).dropna(how='all', axis=1)
