@@ -1,31 +1,61 @@
 import os
 import json
 import pandas as pd
+import re
 
-input_folder = "ndjson_files"   # 🔹 your folder name
+input_folder = "ndjson_files"
 all_records = []
+bad_records = []
 
-# ---- Step 1: Loop through all files in folder ----
+# Simple regex: starts with { and ends with }
+json_pattern = re.compile(r'^\s*\{.*\}\s*$')
+
 for file_name in os.listdir(input_folder):
     if file_name.endswith(".json") or file_name.endswith(".ndjson"):
         file_path = os.path.join(input_folder, file_name)
         print(f"Processing {file_path}...")
 
-        # ---- Step 2: Read file line by line (NDJSON format) ----
-        with open(file_path, "r", encoding="utf-8") as f:
-            for line in f:
-                if line.strip():
-                    try:
-                        obj = json.loads(line)
-                        obj["source_file"] = file_name   # keep track of file source
-                        all_records.append(obj)
-                    except json.JSONDecodeError as e:
-                        print(f"❌ Error parsing {file_name}: {e}")
+        for enc in ["utf-8", "latin-1"]:
+            try:
+                with open(file_path, "r", encoding=enc) as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
 
-# ---- Step 3: Flatten nested JSON ----
-df = pd.json_normalize(all_records, sep="_")
+                        # Quick regex check: only attempt if it looks like JSON
+                        if not json_pattern.match(line):
+                            bad_records.append((file_name, line, "Regex fail"))
+                            continue
 
-# ---- Step 4: Save to Excel ----
-df.to_excel("combined_output.xlsx", index=False)
+                        # Fix common JSON issues
+                        fixed_line = (
+                            line.replace("'", '"')
+                                .replace("None", '"None"')
+                                .replace("True", "true")
+                                .replace("False", "false")
+                                .rstrip(",")
+                        )
 
-print("✅ All NDJSON files processed. Output saved as combined_output.xlsx")
+                        try:
+                            obj = json.loads(fixed_line)
+                            obj["source_file"] = file_name
+                            all_records.append(obj)
+                        except json.JSONDecodeError as e:
+                            bad_records.append((file_name, line, str(e)))
+                break  # Stop after first successful encoding
+            except UnicodeDecodeError:
+                continue
+
+# Save good records
+if all_records:
+    df = pd.json_normalize(all_records, sep="_")
+    df.to_excel("combined_output.xlsx", index=False)
+    print("✅ All NDJSON files processed. Output saved as combined_output.xlsx")
+
+# Save bad records for manual review
+if bad_records:
+    with open("bad_records.log", "w", encoding="utf-8") as f:
+        for file_name, line, err in bad_records:
+            f.write(f"File: {file_name}\nError: {err}\nLine: {line}\n\n")
+    print(f"⚠️ {len(bad_records)} bad records skipped. See bad_records.log for details.")
