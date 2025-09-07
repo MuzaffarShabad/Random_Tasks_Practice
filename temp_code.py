@@ -1,53 +1,19 @@
+import json
 import pandas as pd
 
-# Load Excel
-df = pd.read_excel("your_file.xlsx")
+records = []
 
-# Example keywords per intent
-intent_keywords = {
-    "booking": ["book", "flight", "reserve"],
-    "cancel": ["cancel", "terminate", "stop"],
-    "refund": ["refund", "money back", "reimbursement"]
-}
+# ---- Step 1: Read line by line ----
+with open("input.json", "r", encoding="utf-8") as f:
+    for line in f:
+        if line.strip():  # skip blank lines
+            obj = json.loads(line)
+            records.append(obj)
 
-# Function to find matched keywords for a given intent
-def find_keywords(text, intent):
-    text_lower = text.lower()
-    keywords = intent_keywords.get(intent, [intent])  # fallback = intent
-    return [kw for kw in keywords if kw.lower() in text_lower]
+# ---- Step 2: Flatten nested JSON ----
+df = pd.json_normalize(records, sep="_")
 
-# Main processing function
-def process_row(row):
-    text = row["text"]
-    pred = row["pred"]
+# ---- Step 3: Save to Excel ----
+df.to_excel("output.xlsx", index=False)
 
-    # Check predicted intent
-    matched = find_keywords(text, pred)
-    if matched:
-        return {"matched_keywords": matched, "has_keyword": True}
-
-    # Otherwise check other intents
-    suggested = {}
-    idx = 1
-    for intent, keywords in intent_keywords.items():
-        if intent == pred:
-            continue
-        matches = [kw for kw in keywords if kw.lower() in text.lower()]
-        if matches:
-            suggested[f"suggested_intent_{idx}"] = intent
-            suggested[f"suggested_keywords_{idx}"] = matches
-            idx += 1
-
-    # Base output
-    result = {"matched_keywords": [], "has_keyword": False}
-    result.update(suggested)
-    return result
-
-# Apply logic to DataFrame
-extra = df.apply(process_row, axis=1, result_type="expand")
-df = pd.concat([df, extra], axis=1)
-
-# Save back
-df.to_excel("output_with_multi_suggestions.xlsx", index=False)
-
-print(df)
+print("✅ JSON file converted to Excel → output.xlsx")
