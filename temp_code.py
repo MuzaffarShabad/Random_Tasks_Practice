@@ -1,32 +1,14 @@
 import os
-import json
-import pandas as pd
 import re
-
-def clean_json(line: str) -> str:
-    """
-    Cleans up a malformed NDJSON line:
-    - Replace single quotes with double quotes
-    - Remove stray * or unicode escapes
-    - Ensure proper commas
-    """
-    line = line.strip()
-
-    # Replace single quotes with double quotes carefully
-    line = re.sub(r"'", '"', line)
-
-    # Fix trailing commas before closing braces/brackets
-    line = re.sub(r",\s*}", "}", line)
-    line = re.sub(r",\s*]", "]", line)
-
-    # Remove stray asterisks or unicode placeholders
-    line = line.replace("*", "").replace("u200a", "")
-
-    return line
-
+import pandas as pd
 
 def extract_fields_from_folder(folder_path, output_excel="output.xlsx"):
     records = []
+
+    # Regex patterns to capture intent, probability, clientRequestId
+    intent_pattern = re.compile(r"'intent':\s*'([^']+)'")
+    prob_pattern = re.compile(r"'probability':\s*([\d\.]+)")
+    client_id_pattern = re.compile(r"clientReguestld[:\s'\"]+([^\s,'\"]+)")
 
     for file_name in os.listdir(folder_path):
         if file_name.endswith(".json"):
@@ -36,29 +18,23 @@ def extract_fields_from_folder(folder_path, output_excel="output.xlsx"):
                 for line in f:
                     if not line.strip():
                         continue
-                    try:
-                        cleaned = clean_json(line)
-                        data = json.loads(cleaned)
+                    
+                    # Extract using regex
+                    intent_match = intent_pattern.search(line)
+                    prob_match = prob_pattern.search(line)
+                    client_id_match = client_id_pattern.search(line)
 
-                        # Extract needed values safely
-                        intents = data.get("intents", {})
-                        cash_office = intents.get("CASH_SET_MIDDLE_OFFICE", {})
-                        intent_info = cash_office.get("intent", {})
+                    intent = intent_match.group(1) if intent_match else None
+                    probability = prob_match.group(1) if prob_match else None
+                    client_request_id = client_id_match.group(1) if client_id_match else None
 
-                        intent = intent_info.get("intent", None)
-                        probability = intent_info.get("probability", None)
-                        client_request_id = data.get("clientReguestld", None) or data.get("clientRequestId", None)
-
+                    if intent or probability or client_request_id:
                         records.append({
                             "intent": intent,
                             "probability": probability,
                             "clientRequestId": client_request_id,
                             "source_file": file_name
                         })
-
-                    except Exception as e:
-                        print(f"Skipping bad line in {file_name}: {e}")
-                        continue
 
     # Save to Excel
     df = pd.DataFrame(records)
