@@ -1,50 +1,71 @@
 import os
-import re
+import json
 import pandas as pd
+import re
 
-# 📂 Folder containing NDJSON files
-folder_path = "path/to/your/folder"
+def clean_json(line: str) -> str:
+    """
+    Cleans up a malformed NDJSON line:
+    - Replace single quotes with double quotes
+    - Remove stray * or unicode escapes
+    - Ensure proper commas
+    """
+    line = line.strip()
 
-records = []
+    # Replace single quotes with double quotes carefully
+    line = re.sub(r"'", '"', line)
 
-# Regex patterns for extracting fields
-intent_pattern = re.compile(r"'intent':\s*'([^']+)'", re.IGNORECASE)
-prob_pattern = re.compile(r"'probability':\s*([\d.]+)", re.IGNORECASE)
-client_pattern = re.compile(r"clientRequestld[:\s*'\*]+([A-Za-z0-9._-]+)")
+    # Fix trailing commas before closing braces/brackets
+    line = re.sub(r",\s*}", "}", line)
+    line = re.sub(r",\s*]", "]", line)
 
-for file_name in os.listdir(folder_path):
-    if file_name.endswith(".ndjson"):
-        file_path = os.path.join(folder_path, file_name)
-        
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue  # skip empty lines
-                
-                # Extract values
-                intent_match = intent_pattern.search(line)
-                prob_match = prob_pattern.search(line)
-                client_match = client_pattern.search(line)
+    # Remove stray asterisks or unicode placeholders
+    line = line.replace("*", "").replace("u200a", "")
 
-                intent_val = intent_match.group(1) if intent_match else None
-                prob_val = float(prob_match.group(1)) if prob_match else None
-                client_id = client_match.group(1) if client_match else None
+    return line
 
-                # Save only if found
-                if intent_val or prob_val or client_id:
-                    records.append({
-                        "intent": intent_val,
-                        "probability": prob_val,
-                        "clientRequestId": client_id,
-                        "file": file_name
-                    })
 
-# Convert to DataFrame
-df = pd.DataFrame(records)
+def extract_fields_from_folder(folder_path, output_excel="output.xlsx"):
+    records = []
 
-# Save to Excel
-output_file = "extracted_intents.xlsx"
-df.to_excel(output_file, index=False)
+    for file_name in os.listdir(folder_path):
+        if file_name.endswith(".json"):
+            file_path = os.path.join(folder_path, file_name)
 
-print(f"✅ Extracted {len(df)} rows and saved to {output_file}")
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    try:
+                        cleaned = clean_json(line)
+                        data = json.loads(cleaned)
+
+                        # Extract needed values safely
+                        intents = data.get("intents", {})
+                        cash_office = intents.get("CASH_SET_MIDDLE_OFFICE", {})
+                        intent_info = cash_office.get("intent", {})
+
+                        intent = intent_info.get("intent", None)
+                        probability = intent_info.get("probability", None)
+                        client_request_id = data.get("clientReguestld", None) or data.get("clientRequestId", None)
+
+                        records.append({
+                            "intent": intent,
+                            "probability": probability,
+                            "clientRequestId": client_request_id,
+                            "source_file": file_name
+                        })
+
+                    except Exception as e:
+                        print(f"Skipping bad line in {file_name}: {e}")
+                        continue
+
+    # Save to Excel
+    df = pd.DataFrame(records)
+    df.to_excel(output_excel, index=False)
+    print(f"✅ Extraction complete. Saved {len(df)} rows to {output_excel}")
+
+
+# Example usage
+folder_path = r"C:\path\to\ndjson\files"
+extract_fields_from_folder(folder_path, "intents_output.xlsx")
