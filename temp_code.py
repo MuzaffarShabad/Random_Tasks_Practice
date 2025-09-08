@@ -1,47 +1,33 @@
-import os
-import re
 import pandas as pd
 
-def extract_fields_from_folder(folder_path, output_excel="output.xlsx"):
-    records = []
+# Read Excel file
+df = pd.read_excel("your_file.xlsx")
 
-    # Regex patterns to capture intent, probability, clientRequestId
-    intent_pattern = re.compile(r"'intent':\s*'([^']+)'")
-    prob_pattern = re.compile(r"'probability':\s*([\d\.]+)")
-    client_id_pattern = re.compile(r"clientReguestld[:\s'\"]+([^\s,'\"]+)")
+# Ensure text column is string
+df["text"] = df["text"].astype(str)
 
-    for file_name in os.listdir(folder_path):
-        if file_name.endswith(".json"):
-            file_path = os.path.join(folder_path, file_name)
+# Compute text length
+df["text_length"] = df["text"].apply(len)
 
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                for line in f:
-                    if not line.strip():
-                        continue
-                    
-                    # Extract using regex
-                    intent_match = intent_pattern.search(line)
-                    prob_match = prob_pattern.search(line)
-                    client_id_match = client_id_pattern.search(line)
+# Overall statistics
+mean_length = df["text_length"].mean()
+max_length = df["text_length"].max()
+std_length = df["text_length"].std()
 
-                    intent = intent_match.group(1) if intent_match else None
-                    probability = prob_match.group(1) if prob_match else None
-                    client_request_id = client_id_match.group(1) if client_id_match else None
+print("Mean text length:", mean_length)
+print("Max text length:", max_length)
+print("Std Dev of text length:", std_length)
 
-                    if intent or probability or client_request_id:
-                        records.append({
-                            "intent": intent,
-                            "probability": probability,
-                            "clientRequestId": client_request_id,
-                            "source_file": file_name
-                        })
+# Value counts of inquiry_id
+inquiry_counts = df["inquiry_id"].value_counts()
 
-    # Save to Excel
-    df = pd.DataFrame(records)
-    df.to_excel(output_excel, index=False)
-    print(f"✅ Extraction complete. Saved {len(df)} rows to {output_excel}")
+print("\nInquiry ID Value Counts:")
+print(inquiry_counts)
 
+# If you also want per-inquiry_id stats
+group_stats = df.groupby("inquiry_id")["text_length"].agg(
+    ["count", "mean", "max", "std"]
+).reset_index()
 
-# Example usage
-folder_path = r"C:\path\to\ndjson\files"
-extract_fields_from_folder(folder_path, "intents_output.xlsx")
+print("\nPer Inquiry ID Stats:")
+print(group_stats)
