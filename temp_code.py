@@ -114,3 +114,90 @@ def CalculateMatrix(tfidf, y, clf):
             auc = roc_auc_score(y_bin, y_prob, multi_class='ovr')
 
     return results_df, cm, auc
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import pandas as pd
+from joblib import load
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+from sklearn.preprocessing import label_binarize
+import numpy as np
+
+def CalculateMatrix(tfidf, y, clf):
+    # Predictions
+    y_pred = clf.predict(tfidf)
+    labels = clf.classes_
+
+    # Classification report
+    report_dict = classification_report(
+        y, y_pred, labels=labels, output_dict=True, zero_division=0
+    )
+    results_df = pd.DataFrame(report_dict).transpose()
+
+    # Confusion matrix
+    cm = confusion_matrix(y, y_pred, labels=labels)
+
+    # AUC calculation (per-class safe handling)
+    auc = {}
+    if hasattr(clf, "predict_proba"):
+        y_prob = clf.predict_proba(tfidf)
+
+        # Store predictions with probabilities
+        preds_df = pd.DataFrame(y_prob, columns=[f"proba_{c}" for c in labels])
+        preds_df["true_label"] = y
+        preds_df["predicted_label"] = y_pred
+
+        # Compute per-class AUC
+        y_bin = label_binarize(y, classes=labels)
+        for i, cls in enumerate(labels):
+            if len(np.unique(y_bin[:, i])) > 1:  # skip if only one class present
+                auc[cls] = roc_auc_score(y_bin[:, i], y_prob[:, i])
+            else:
+                auc[cls] = np.nan
+    else:
+        preds_df = pd.DataFrame({"true_label": y, "predicted_label": y_pred})
+
+    return results_df, cm, auc, preds_df
+
+
+
+
+
+
+
+
+
+
+
+
+# Run evaluation
+results_df, cm, auc, preds_df = CalculateMatrix(X_tfidf, y_true, clf)
+
+print("Classification Report:\n", results_df)
+print("\nConfusion Matrix:\n", cm)
+print("\nPer-class AUC:", auc)
+
+# Show sample predictions with probabilities
+print("\nSample predictions with probabilities:\n", preds_df.head(10))
+
+# Save to Excel
+preds_df.to_excel("detailed_predictions.xlsx", index=False)
+
