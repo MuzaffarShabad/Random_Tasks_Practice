@@ -1,33 +1,19 @@
 import pandas as pd
+from joblib import load
 
-# Read Excel file
-df = pd.read_excel("your_file.xlsx")
+# 1. Load Excel file
+df = pd.read_excel("input_data.xlsx")   # replace with your file
+X_text = df['text']   # assuming the text column is named 'text'
 
-# Ensure text column is string
-df["text"] = df["text"].astype(str)
+# 2. Load TF-IDF vectorizer
+vectorizer = load("TF-IDF-Vectorizer.joblib")
 
-# Compute text length
-df["text_length"] = df["text"].apply(len)
+# 3. Transform text into numeric features
+X_tfidf = vectorizer.transform(X_text)
 
-# Overall statistics
-mean_length = df["text_length"].mean()
-max_length = df["text_length"].max()
-std_length = df["text_length"].std()
+# Show shape of the transformed data
+print("TF-IDF shape:", X_tfidf.shape)
 
-print("Mean text length:", mean_length)
-print("Max text length:", max_length)
-print("Std Dev of text length:", std_length)
-
-# Value counts of inquiry_id
-inquiry_counts = df["inquiry_id"].value_counts()
-
-print("\nInquiry ID Value Counts:")
-print(inquiry_counts)
-
-# If you also want per-inquiry_id stats
-group_stats = df.groupby("inquiry_id")["text_length"].agg(
-    ["count", "mean", "max", "std"]
-).reset_index()
-
-print("\nPer Inquiry ID Stats:")
-print(group_stats)
+# Optionally convert to dense DataFrame (only if not too large)
+tfidf_df = pd.DataFrame(X_tfidf.toarray(), columns=vectorizer.get_feature_names_out())
+print(tfidf_df.head())
