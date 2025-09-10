@@ -40,3 +40,31 @@ def CalculateMatrix(tfidf, y, clf, labels):
             print("AUC not calculated:", e)
 
     return results_df, cm, auc
+
+
+
+
+
+
+# 1. Load data
+df = pd.read_excel("input_data.xlsx")
+X_text = df['text']
+y_true = df['label']
+
+# 2. Load TF-IDF vectorizer & transform
+vectorizer = load("TF-IDF-Vectorizer.joblib")
+X_tfidf = vectorizer.transform(X_text)
+
+# 3. Load trained classifier
+clf = load("model.joblib")   # random forest model
+
+# 4. Define labels
+labels = sorted(df['label'].unique())
+
+# 5. Run evaluation
+results_df, cm, auc = CalculateMatrix(X_tfidf, y_true, clf, labels)
+
+print("Classification Report:\n", results_df)
+print("\nConfusion Matrix:\n", cm)
+print("\nAUC Score:", auc)
+
