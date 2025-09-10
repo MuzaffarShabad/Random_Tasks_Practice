@@ -1,19 +1,42 @@
 import pandas as pd
 from joblib import load
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
 
-# 1. Load Excel file
-df = pd.read_excel("input_data.xlsx")   # replace with your file
-X_text = df['text']   # assuming the text column is named 'text'
+def CalculateMatrix(tfidf, y, clf, labels):
+    """
+    Calculate evaluation metrics for a trained classifier.
 
-# 2. Load TF-IDF vectorizer
-vectorizer = load("TF-IDF-Vectorizer.joblib")
+    Parameters:
+    - tfidf : sparse matrix, features from TF-IDF
+    - y : array-like, true labels
+    - clf : trained classifier
+    - labels : list of labels to include in the report
 
-# 3. Transform text into numeric features
-X_tfidf = vectorizer.transform(X_text)
+    Returns:
+    - results_df : DataFrame containing classification report
+    - cm : confusion matrix
+    - auc : AUC score (if probabilities available)
+    """
 
-# Show shape of the transformed data
-print("TF-IDF shape:", X_tfidf.shape)
+    # Predictions
+    y_pred = clf.predict(tfidf)
 
-# Optionally convert to dense DataFrame (only if not too large)
-tfidf_df = pd.DataFrame(X_tfidf.toarray(), columns=vectorizer.get_feature_names_out())
-print(tfidf_df.head())
+    # Classification report
+    report_dict = classification_report(
+        y, y_pred, labels=labels, output_dict=True, zero_division=0
+    )
+    results_df = pd.DataFrame(report_dict).transpose()
+
+    # Confusion matrix
+    cm = confusion_matrix(y, y_pred, labels=labels)
+
+    # AUC score (if predict_proba exists)
+    auc = None
+    if hasattr(clf, "predict_proba"):
+        try:
+            y_prob = clf.predict_proba(tfidf)
+            auc = roc_auc_score(y, y_prob, multi_class='ovr')
+        except Exception as e:
+            print("AUC not calculated:", e)
+
+    return results_df, cm, auc
