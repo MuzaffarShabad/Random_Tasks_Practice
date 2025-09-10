@@ -68,3 +68,49 @@ print("Classification Report:\n", results_df)
 print("\nConfusion Matrix:\n", cm)
 print("\nAUC Score:", auc)
 
+
+
+
+
+
+
+
+
+
+
+
+print("y_true shape:", len(y))
+print("y_prob shape:", y_prob.shape)
+print("clf.classes_:", clf.classes_)
+print("Unique y_true:", set(y))
+
+
+
+
+
+
+
+
+from sklearn.preprocessing import label_binarize
+
+def CalculateMatrix(tfidf, y, clf):
+    y_pred = clf.predict(tfidf)
+    labels = clf.classes_
+
+    report_dict = classification_report(
+        y, y_pred, labels=labels, output_dict=True, zero_division=0
+    )
+    results_df = pd.DataFrame(report_dict).transpose()
+    cm = confusion_matrix(y, y_pred, labels=labels)
+
+    auc = None
+    if hasattr(clf, "predict_proba"):
+        y_prob = clf.predict_proba(tfidf)
+
+        # Binarize y_true for multiclass AUC
+        y_bin = label_binarize(y, classes=labels)
+
+        if y_bin.shape[1] == y_prob.shape[1]:
+            auc = roc_auc_score(y_bin, y_prob, multi_class='ovr')
+
+    return results_df, cm, auc
