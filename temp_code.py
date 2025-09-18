@@ -30,43 +30,27 @@ print(f"✅ Merged {len(all_records)} records into {output_file}")
 
 
 
-import os
 import json
 import pandas as pd
 
-# Paths
-input_folder = "ndjson_files"       # parent folder where ndjson/json files are stored
-merged_file = "merged_output.json"  # previously created merged file
+# Input/output files
+merged_file = "merged_output.json"
 output_excel = "client_case_ids.xlsx"
 
-# Step 1: Load merged JSON records
+# Load merged JSON
 with open(merged_file, "r", encoding="utf-8") as f:
     records = json.load(f)
 
-# Step 2: Traverse again through original files to find source
+# Extract CLIENT_CASE_ID from httpHeaders
 results = []
-for subdir, dirs, files in os.walk(input_folder):
-    for filename in files:
-        if filename.endswith(".json") or filename.endswith(".ndjson"):
-            file_path = os.path.join(subdir, filename)
-            with open(file_path, "r", encoding="utf-8") as infile:
-                for line in infile:
-                    line = line.strip()
-                    if line:
-                        try:
-                            record = json.loads(line)
-                            if "CLIENT_CASE_ID" in record:
-                                results.append({
-                                    "CLIENT_CASE_ID": record["CLIENT_CASE_ID"],
-                                    "Source_File": filename,
-                                    "Subdirectory": os.path.relpath(subdir, input_folder)
-                                })
-                        except json.JSONDecodeError:
-                            continue
+for rec in records:
+    http_headers = rec.get("httpHeaders", {})
+    client_case_id = http_headers.get("CLIENT_CASE_ID")
+    if client_case_id:
+        results.append({"CLIENT_CASE_ID": client_case_id})
 
-# Step 3: Save to Excel
+# Convert to DataFrame and save to Excel
 df = pd.DataFrame(results)
 df.to_excel(output_excel, index=False)
 
 print(f"✅ Extracted {len(results)} CLIENT_CASE_ID values into {output_excel}")
-
