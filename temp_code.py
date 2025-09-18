@@ -1,70 +1,75 @@
 import pandas as pd
-import ast
 import json
+import re
 
-# Load Excel
-file_path = "your_file.xlsx"
+file_path = r"C:\Users\shaba\OneDrive\Desktop\sample.xlsx"
 df = pd.read_excel(file_path)
 
+def clean_and_parse(cell_value):
+    if pd.isna(cell_value):
+        return []
+    text = str(cell_value)
+
+    # Fix quotes (turn all into double quotes)
+    text = text.replace("'", '"')
+
+    # Fix common errors like "}, {"
+    text = re.sub(r'(\w)"(\s*:)', r'\1"\2', text)  
+
+    # Remove trailing commas/spaces
+    text = text.strip()
+
+    # Ensure it looks like a list
+    if not text.startswith("["):
+        text = "[" + text
+    if not text.endswith("]"):
+        text = text + "]"
+
+    try:
+        return json.loads(text)
+    except Exception as e:
+        print("⚠️ Bad record:", e, "\n", text[:200])
+        return []
+
 def normalize_dict(d):
-    """
-    Normalize dictionary:
-    - Strip spaces from keys/values
-    - Lowercase keys
-    - Convert values to string
-    """
     return {k.strip().lower(): str(v).strip() for k, v in d.items()}
 
 def compare_dict_lists(list1, list2):
-    """Compare two lists of dicts, return common, only_in_list1, only_in_list2"""
-    # Flatten outer [[]] if needed
-    if isinstance(list1, list) and len(list1) == 1 and isinstance(list1[0], list):
-        list1 = list1[0]
-    if isinstance(list2, list) and len(list2) == 1 and isinstance(list2[0], list):
-        list2 = list2[0]
+    # Flatten if nested
+    flat1 = []
+    for x in list1:
+        flat1.extend(x if isinstance(x, list) else [x])
+    flat2 = []
+    for x in list2:
+        flat2.extend(x if isinstance(x, list) else [x])
 
-    norm1 = [normalize_dict(d) for d in list1]
-    norm2 = [normalize_dict(d) for d in list2]
+    norm1 = [normalize_dict(d) for d in flat1 if isinstance(d, dict)]
+    norm2 = [normalize_dict(d) for d in flat2 if isinstance(d, dict)]
 
-    # Use sets of JSON strings for comparison
     set1 = {json.dumps(d, sort_keys=True) for d in norm1}
     set2 = {json.dumps(d, sort_keys=True) for d in norm2}
 
-    common = set1 & set2
-    only1 = set1 - set2
-    only2 = set2 - set1
+    common = [json.loads(x) for x in set1 & set2]
+    only1 = [json.loads(x) for x in set1 - set2]
+    only2 = [json.loads(x) for x in set2 - set1]
 
-    return (
-        [json.loads(x) for x in common],
-        [json.loads(x) for x in only1],
-        [json.loads(x) for x in only2],
-    )
+    return common, only1, only2
 
-# Process row by row
 common_list, only5_list, only10_list = [], [], []
 
 for _, row in df.iterrows():
-    try:
-        # Parse safely
-        list5 = ast.literal_eval(str(row["output_5"]))
-        list10 = ast.literal_eval(str(row["output_10"]))
+    list5 = clean_and_parse(row["output_5"])
+    list10 = clean_and_parse(row["output_10"])
 
-        common, only5, only10 = compare_dict_lists(list5, list10)
-    except Exception as e:
-        print(f"⚠️ Error parsing row: {e}")
-        common, only5, only10 = [], [], []
+    common, only5, only10 = compare_dict_lists(list5, list10)
 
     common_list.append(common)
     only5_list.append(only5)
     only10_list.append(only10)
 
-# Add results
 df["common_items"] = common_list
 df["only_in_output_5"] = only5_list
 df["only_in_output_10"] = only10_list
 
-# Save
-output_file = "comparison_results.xlsx"
-df.to_excel(output_file, index=False)
-
-print(f"✅ Comparison done. Results saved in {output_file}")
+df.to_excel("comparison_results.xlsx", index=False)
+print("✅ Done. Results saved to comparison_results.xlsx")
