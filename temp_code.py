@@ -1,56 +1,60 @@
-import os
-import json
-
-input_folder = "ndjson_files"   # folder containing NDJSON files
-output_file = "merged_output.json"
-
-all_records = []
-
-for filename in os.listdir(input_folder):
-    if filename.endswith(".json") or filename.endswith(".ndjson"):
-        file_path = os.path.join(input_folder, filename)
-        with open(file_path, "r", encoding="utf-8") as infile:
-            for line in infile:
-                line = line.strip()
-                if line:  # avoid blank lines
-                    try:
-                        record = json.loads(line)  # parse each NDJSON line
-                        all_records.append(record)
-                    except json.JSONDecodeError:
-                        print(f"⚠️ Skipping invalid JSON line in {filename}: {line[:50]}...")
-
-# Save all records into a single JSON array
-with open(output_file, "w", encoding="utf-8") as outfile:
-    json.dump(all_records, outfile, indent=2, ensure_ascii=False)
-
-print(f"✅ Merged {len(all_records)} records into {output_file}")
-
-
-
-
-
-
-import json
 import pandas as pd
+import ast
+import json
 
-# Input/output files
-merged_file = "merged_output.json"
-output_excel = "client_case_ids.xlsx"
+# Load Excel
+file_path = "your_file.xlsx"
+df = pd.read_excel(file_path)
 
-# Load merged JSON
-with open(merged_file, "r", encoding="utf-8") as f:
-    records = json.load(f)
+def normalize_dict(d):
+    """Normalize dictionary by sorting keys and stripping spaces"""
+    return {k.strip().lower(): str(v).strip() for k, v in d.items()}
 
-# Extract CLIENT_CASE_ID from httpHeaders
-results = []
-for rec in records:
-    http_headers = rec.get("httpHeaders", {})
-    client_case_id = http_headers.get("CLIENT_CASE_ID")
-    if client_case_id:
-        results.append({"CLIENT_CASE_ID": client_case_id})
+def compare_dict_lists(list1, list2):
+    """Compare two lists of dicts, return common, only_in_list1, only_in_list2"""
+    norm1 = [normalize_dict(d) for d in list1]
+    norm2 = [normalize_dict(d) for d in list2]
 
-# Convert to DataFrame and save to Excel
-df = pd.DataFrame(results)
-df.to_excel(output_excel, index=False)
+    # Convert to sets of json strings for comparison (order-independent)
+    set1 = {json.dumps(d, sort_keys=True) for d in norm1}
+    set2 = {json.dumps(d, sort_keys=True) for d in norm2}
 
-print(f"✅ Extracted {len(results)} CLIENT_CASE_ID values into {output_excel}")
+    common = set1 & set2
+    only1 = set1 - set2
+    only2 = set2 - set1
+
+    # Convert back to list of dicts
+    return (
+        [json.loads(x) for x in common],
+        [json.loads(x) for x in only1],
+        [json.loads(x) for x in only2]
+    )
+
+# Process row by row
+common_list, only5_list, only10_list = [], [], []
+
+for _, row in df.iterrows():
+    try:
+        # Convert string repr of list of dicts to actual Python objects
+        list5 = ast.literal_eval(str(row["output_5"]))
+        list10 = ast.literal_eval(str(row["output_10"]))
+
+        common, only5, only10 = compare_dict_lists(list5, list10)
+    except Exception as e:
+        common, only5, only10 = [], [], []
+        print(f"Error parsing row: {e}")
+
+    common_list.append(common)
+    only5_list.append(only5)
+    only10_list.append(only10)
+
+# Add results to DataFrame
+df["common_items"] = common_list
+df["only_in_output_5"] = only5_list
+df["only_in_output_10"] = only10_list
+
+# Save to new Excel
+output_file = "comparison_results.xlsx"
+df.to_excel(output_file, index=False)
+
+print(f"✅ Comparison done. Results saved in {output_file}")
