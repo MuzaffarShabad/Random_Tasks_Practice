@@ -52,6 +52,7 @@ def extract_cash_office_intents(folder_path, output_excel="output_cash_office.xl
                         client_request_id = data.get("clientReguestld", None) or data.get("clientRequestId", None)
 
                         records.append({
+                            "section": "CASH_SET_MIDDLE_OFFICE",
                             "intent": intent,
                             "probability": probability,
                             "clientRequestId": client_request_id,
@@ -62,15 +63,12 @@ def extract_cash_office_intents(folder_path, output_excel="output_cash_office.xl
                         print(f"Skipping bad line in {file_name}: {e}")
                         continue
 
-    df = pd.DataFrame(records)
-    df.to_excel(output_excel, index=False)
-    print(f"✅ CASH office extraction complete. Saved {len(df)} rows to {output_excel}")
+    return records
 
 
 def extract_asset_servicing_intents(folder_path, output_excel="output_asset_servicing.xlsx"):
     """
-    Extracts specifically 'Payment Incorrect/Missing' intent with probability
-    and clientRequestId from ASSET_SERVICING section.
+    Extracts ALL intents with probability and clientRequestId from ASSET_SERVICING section.
     """
     records = []
 
@@ -94,25 +92,37 @@ def extract_asset_servicing_intents(folder_path, output_excel="output_asset_serv
                         probability = intent_info.get("probability", None)
                         client_request_id = data.get("clientReguestld", None) or data.get("clientRequestId", None)
 
-                        # Only store if it's the Payment Incorrect/Missing intent
-                        if intent and "Payment Incorrect/Missing" in intent:
-                            records.append({
-                                "intent": intent,
-                                "probability": probability,
-                                "clientRequestId": client_request_id,
-                                "source_file": file_name
-                            })
+                        records.append({
+                            "section": "ASSET_SERVICING",
+                            "intent": intent,
+                            "probability": probability,
+                            "clientRequestId": client_request_id,
+                            "source_file": file_name
+                        })
 
                     except Exception as e:
                         print(f"Skipping bad line in {file_name}: {e}")
                         continue
 
-    df = pd.DataFrame(records)
-    df.to_excel(output_excel, index=False)
-    print(f"✅ Asset Servicing extraction complete. Saved {len(df)} rows to {output_excel}")
+    return records
+
+
+def extract_all(folder_path, output_excel="intents_output.xlsx"):
+    """
+    Extract both CASH_SET_MIDDLE_OFFICE and ASSET_SERVICING intents into one Excel (two sheets).
+    """
+    cash_office_records = extract_cash_office_intents(folder_path)
+    asset_servicing_records = extract_asset_servicing_intents(folder_path)
+
+    with pd.ExcelWriter(output_excel, engine="openpyxl") as writer:
+        if cash_office_records:
+            pd.DataFrame(cash_office_records).to_excel(writer, sheet_name="CashOffice", index=False)
+        if asset_servicing_records:
+            pd.DataFrame(asset_servicing_records).to_excel(writer, sheet_name="AssetServicing", index=False)
+
+    print(f"✅ Extraction complete. Saved to {output_excel}")
 
 
 # Example usage:
 folder_path = r"C:\path\to\ndjson\files"
-extract_cash_office_intents(folder_path, "cash_office_output.xlsx")
-extract_asset_servicing_intents(folder_path, "asset_servicing_output.xlsx")
+extract_all(folder_path, "intents_output.xlsx")
