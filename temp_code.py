@@ -1,64 +1,118 @@
 import os
 import json
-import re
 import pandas as pd
+import re
 
-# 🔹 Folder containing your NDJSON .json files
-INPUT_FOLDER = "ndjson_files"
-OUTPUT_FILE = "intent_results.xlsx"
+def clean_json(line: str) -> str:
+    """
+    Cleans up a malformed NDJSON line:
+    - Replace single quotes with double quotes
+    - Remove stray * or unicode escapes
+    - Ensure proper commas
+    """
+    line = line.strip()
 
-records = []
+    # Replace single quotes with double quotes carefully
+    line = re.sub(r"'", '"', line)
 
-def clean_json_string(s):
-    """Try to fix common JSON formatting issues in your files"""
-    s = s.replace("(", "{").replace(")", "}")
-    s = s.replace("“", '"').replace("”", '"')
-    s = s.replace("'", '"')
-    s = re.sub(r",\s*}", "}", s)   # remove trailing commas
-    s = re.sub(r",\s*]", "]", s)
-    return s
+    # Fix trailing commas before closing braces/brackets
+    line = re.sub(r",\s*}", "}", line)
+    line = re.sub(r",\s*]", "]", line)
 
-# 🔹 Loop through all .json files
-for file in os.listdir(INPUT_FOLDER):
-    if file.endswith(".json"):
-        filepath = os.path.join(INPUT_FOLDER, file)
-        with open(filepath, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    clean_line = clean_json_string(line)
-                    data = json.loads(clean_line)
+    # Remove stray asterisks or unicode placeholders
+    line = line.replace("*", "").replace("u200a", "")
 
-                    # Extract fields safely
-                    intent = None
-                    prob = None
-                    client_req_id = data.get("clientRequestId", None)
+    return line
 
-                    intents_section = data.get("intents", {})
-                    for _, intent_block in intents_section.items():
-                        if isinstance(intent_block, dict):
-                            inner_intent = intent_block.get("intent", {})
-                            if isinstance(inner_intent, dict):
-                                if inner_intent.get("intent"):
-                                    intent = inner_intent.get("intent")
-                                    prob = inner_intent.get("probability")
-                                    break
 
-                    records.append({
-                        "filename": file,
-                        "intent": intent,
-                        "probability": prob,
-                        "clientRequestId": client_req_id
-                    })
+def extract_cash_office_intents(folder_path, output_excel="output_cash_office.xlsx"):
+    """
+    Extracts intent/probability/clientRequestId from CASH_SET_MIDDLE_OFFICE section.
+    """
+    records = []
 
-                except Exception as e:
-                    print(f"⚠️ Could not parse line in {file}: {e}")
-                    continue
+    for file_name in os.listdir(folder_path):
+        if file_name.endswith(".json"):
+            file_path = os.path.join(folder_path, file_name)
 
-# 🔹 Save to Excel
-df = pd.DataFrame(records)
-df.to_excel(OUTPUT_FILE, index=False)
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    try:
+                        cleaned = clean_json(line)
+                        data = json.loads(cleaned)
 
-print(f"✅ Done. Extracted {len(df)} records. Results saved to {OUTPUT_FILE}")
+                        intents = data.get("intents", {})
+                        cash_office = intents.get("CASH_SET_MIDDLE_OFFICE", {})
+                        intent_info = cash_office.get("intent", {})
+
+                        intent = intent_info.get("intent", None)
+                        probability = intent_info.get("probability", None)
+                        client_request_id = data.get("clientReguestld", None) or data.get("clientRequestId", None)
+
+                        records.append({
+                            "intent": intent,
+                            "probability": probability,
+                            "clientRequestId": client_request_id,
+                            "source_file": file_name
+                        })
+
+                    except Exception as e:
+                        print(f"Skipping bad line in {file_name}: {e}")
+                        continue
+
+    df = pd.DataFrame(records)
+    df.to_excel(output_excel, index=False)
+    print(f"✅ CASH office extraction complete. Saved {len(df)} rows to {output_excel}")
+
+
+def extract_asset_servicing_intents(folder_path, output_excel="output_asset_servicing.xlsx"):
+    """
+    Extracts specifically 'Payment Incorrect/Missing' intent with probability
+    and clientRequestId from ASSET_SERVICING section.
+    """
+    records = []
+
+    for file_name in os.listdir(folder_path):
+        if file_name.endswith(".json"):
+            file_path = os.path.join(folder_path, file_name)
+
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    try:
+                        cleaned = clean_json(line)
+                        data = json.loads(cleaned)
+
+                        intents = data.get("intents", {})
+                        asset_servicing = intents.get("ASSET SERVICING", {})
+                        intent_info = asset_servicing.get("intent", {})
+
+                        intent = intent_info.get("intent", None)
+                        probability = intent_info.get("probability", None)
+                        client_request_id = data.get("clientReguestld", None) or data.get("clientRequestId", None)
+
+                        # Only store if it's the Payment Incorrect/Missing intent
+                        if intent and "Payment Incorrect/Missing" in intent:
+                            records.append({
+                                "intent": intent,
+                                "probability": probability,
+                                "clientRequestId": client_request_id,
+                                "source_file": file_name
+                            })
+
+                    except Exception as e:
+                        print(f"Skipping bad line in {file_name}: {e}")
+                        continue
+
+    df = pd.DataFrame(records)
+    df.to_excel(output_excel, index=False)
+    print(f"✅ Asset Servicing extraction complete. Saved {len(df)} rows to {output_excel}")
+
+
+# Example usage:
+folder_path = r"C:\path\to\ndjson\files"
+extract_cash_office_intents(folder_path, "cash_office_output.xlsx")
+extract_asset_servicing_intents(folder_path, "asset_servicing_output.xlsx")
