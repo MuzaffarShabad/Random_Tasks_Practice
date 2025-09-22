@@ -1,35 +1,14 @@
 import os
-import json
-import pandas as pd
 import re
+import pandas as pd
 
-def clean_json(line: str) -> str:
-    """
-    Cleans up a malformed NDJSON line:
-    - Replace single quotes with double quotes
-    - Remove stray * or unicode escapes
-    - Ensure proper commas
-    """
-    line = line.strip()
-
-    # Replace single quotes with double quotes carefully
-    line = re.sub(r"'", '"', line)
-
-    # Fix trailing commas before closing braces/brackets
-    line = re.sub(r",\s*}", "}", line)
-    line = re.sub(r",\s*]", "]", line)
-
-    # Remove stray asterisks or unicode placeholders
-    line = line.replace("*", "").replace("u200a", "")
-
-    return line
-
-
-def extract_cash_office_intents(folder_path, output_excel="output_cash_office.xlsx"):
-    """
-    Extracts intent/probability/clientRequestId from CASH_SET_MIDDLE_OFFICE section.
-    """
+def extract_with_regex(folder_path, output_excel="asset_servicing_output.xlsx"):
     records = []
+
+    # Regex patterns for intent, probability, and clientRequestId
+    intent_pattern = re.compile(r'"intent"\s*:\s*"([^"]+)"', re.IGNORECASE)
+    prob_pattern = re.compile(r'"probability"\s*:\s*([\d.]+)', re.IGNORECASE)
+    client_id_pattern = re.compile(r'"clientRequestId"\s*:\s*"([^"]+)"', re.IGNORECASE)
 
     for file_name in os.listdir(folder_path):
         if file_name.endswith(".json"):
@@ -40,89 +19,31 @@ def extract_cash_office_intents(folder_path, output_excel="output_cash_office.xl
                     if not line.strip():
                         continue
                     try:
-                        cleaned = clean_json(line)
-                        data = json.loads(cleaned)
+                        # Find all intents
+                        intents = intent_pattern.findall(line)
+                        probs = prob_pattern.findall(line)
+                        client_ids = client_id_pattern.findall(line)
 
-                        intents = data.get("intents", {})
-                        cash_office = intents.get("CASH_SET_MIDDLE_OFFICE", {})
-                        intent_info = cash_office.get("intent", {})
-
-                        intent = intent_info.get("intent", None)
-                        probability = intent_info.get("probability", None)
-                        client_request_id = data.get("clientReguestld", None) or data.get("clientRequestId", None)
-
-                        records.append({
-                            "section": "CASH_SET_MIDDLE_OFFICE",
-                            "intent": intent,
-                            "probability": probability,
-                            "clientRequestId": client_request_id,
-                            "source_file": file_name
-                        })
-
+                        # Pair them safely
+                        for i, intent in enumerate(intents):
+                            prob = probs[i] if i < len(probs) else None
+                            client_id = client_ids[0] if client_ids else None
+                            records.append({
+                                "intent": intent,
+                                "probability": prob,
+                                "clientRequestId": client_id,
+                                "source_file": file_name
+                            })
                     except Exception as e:
                         print(f"Skipping bad line in {file_name}: {e}")
                         continue
 
-    return records
+    # Save to Excel
+    df = pd.DataFrame(records)
+    df.to_excel(output_excel, index=False)
+    print(f"✅ Regex extraction complete. Saved {len(df)} rows to {output_excel}")
 
 
-def extract_asset_servicing_intents(folder_path, output_excel="output_asset_servicing.xlsx"):
-    """
-    Extracts ALL intents with probability and clientRequestId from ASSET_SERVICING section.
-    """
-    records = []
-
-    for file_name in os.listdir(folder_path):
-        if file_name.endswith(".json"):
-            file_path = os.path.join(folder_path, file_name)
-
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                for line in f:
-                    if not line.strip():
-                        continue
-                    try:
-                        cleaned = clean_json(line)
-                        data = json.loads(cleaned)
-
-                        intents = data.get("intents", {})
-                        asset_servicing = intents.get("ASSET SERVICING", {})
-                        intent_info = asset_servicing.get("intent", {})
-
-                        intent = intent_info.get("intent", None)
-                        probability = intent_info.get("probability", None)
-                        client_request_id = data.get("clientReguestld", None) or data.get("clientRequestId", None)
-
-                        records.append({
-                            "section": "ASSET_SERVICING",
-                            "intent": intent,
-                            "probability": probability,
-                            "clientRequestId": client_request_id,
-                            "source_file": file_name
-                        })
-
-                    except Exception as e:
-                        print(f"Skipping bad line in {file_name}: {e}")
-                        continue
-
-    return records
-
-
-def extract_all(folder_path, output_excel="intents_output.xlsx"):
-    """
-    Extract both CASH_SET_MIDDLE_OFFICE and ASSET_SERVICING intents into one Excel (two sheets).
-    """
-    cash_office_records = extract_cash_office_intents(folder_path)
-    asset_servicing_records = extract_asset_servicing_intents(folder_path)
-
-    with pd.ExcelWriter(output_excel, engine="openpyxl") as writer:
-        if cash_office_records:
-            pd.DataFrame(cash_office_records).to_excel(writer, sheet_name="CashOffice", index=False)
-        if asset_servicing_records:
-            pd.DataFrame(asset_servicing_records).to_excel(writer, sheet_name="AssetServicing", index=False)
-
-    print(f"✅ Extraction complete. Saved to {output_excel}")
-
-
-# Example usage:
+# Example usage
 folder_path = r"C:\path\to\ndjson\files"
-extract_all(folder_path, "intents_output.xlsx")
+extract_with_regex(folder_path, "asset_servicing_regex_output.xlsx")
