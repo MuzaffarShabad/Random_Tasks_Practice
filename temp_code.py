@@ -5,13 +5,13 @@ import pandas as pd
 def extract_asset_servicing_regex(folder_path, output_excel="asset_servicing_output.xlsx"):
     records = []
 
-    # Regex to isolate the ASSET_SERVICING block
-    asset_servicing_block = re.compile(r'ASSET[_\s]?SERVICING.*?}(?=[},]|$)', re.IGNORECASE | re.DOTALL)
+    # Regex for ASSET SERVICING block
+    asset_servicing_block = re.compile(r"'ASSET SERVICING'.*?(?=},|$)", re.IGNORECASE | re.DOTALL)
 
-    # Regex patterns inside ASSET_SERVICING
-    intent_pattern = re.compile(r'"intent"\s*:\s*"([^"]+)"', re.IGNORECASE)
-    prob_pattern = re.compile(r'"probability"\s*:\s*([\d.]+)', re.IGNORECASE)
-    client_id_pattern = re.compile(r'"clientRequestId"\s*:\s*"([^"]+)"', re.IGNORECASE)
+    # Regex patterns inside ASSET SERVICING (single-quote style)
+    intent_pattern = re.compile(r"'intent'\s*:\s*'([^']+)'", re.IGNORECASE)
+    prob_pattern = re.compile(r"'probability'\s*:\s*([\d.]+)", re.IGNORECASE)
+    client_id_pattern = re.compile(r"'clientRequestId'\s*:\s*'([^']+)'", re.IGNORECASE)
 
     for file_name in os.listdir(folder_path):
         if file_name.endswith(".json"):
@@ -22,14 +22,14 @@ def extract_asset_servicing_regex(folder_path, output_excel="asset_servicing_out
                     if not line.strip():
                         continue
                     try:
-                        # First isolate ASSET_SERVICING section
+                        # Isolate ASSET SERVICING blocks
                         asset_blocks = asset_servicing_block.findall(line)
 
                         for block in asset_blocks:
                             intents = intent_pattern.findall(block)
                             probs = prob_pattern.findall(block)
 
-                            # ClientRequestId usually outside ASSET_SERVICING, check full line
+                            # ClientRequestId may sit outside block
                             client_ids = client_id_pattern.findall(line)
 
                             for i, intent in enumerate(intents):
@@ -45,7 +45,7 @@ def extract_asset_servicing_regex(folder_path, output_excel="asset_servicing_out
                         print(f"Skipping bad line in {file_name}: {e}")
                         continue
 
-    # Save to Excel
+    # Save results
     df = pd.DataFrame(records)
     df.to_excel(output_excel, index=False)
     print(f"✅ Extraction complete. Saved {len(df)} rows to {output_excel}")
