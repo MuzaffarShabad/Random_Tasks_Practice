@@ -1,56 +1,5 @@
-import os
-import re
-import pandas as pd
+Congratulations on successfully completing one year at ABC Organization! 🎊 This milestone is a reflection of your hard work, dedication, and the positive impact you’ve created.
 
-def extract_asset_servicing_regex(folder_path, output_excel="asset_servicing_output.xlsx"):
-    records = []
+I truly appreciate your constant support, cooperation, and the way you’ve guided me in different roles and tasks. Your professionalism and collaborative spirit make a big difference, and it’s been a pleasure working alongside you.
 
-    # Regex for ASSET SERVICING block
-    asset_servicing_block = re.compile(r"'ASSET SERVICING'.*?(?=},|$)", re.IGNORECASE | re.DOTALL)
-
-    # Regex patterns inside ASSET SERVICING (single-quote style)
-    intent_pattern = re.compile(r"'intent'\s*:\s*'([^']+)'", re.IGNORECASE)
-    prob_pattern = re.compile(r"'probability'\s*:\s*([\d.]+)", re.IGNORECASE)
-    client_id_pattern = re.compile(r"'clientRequestId'\s*:\s*'([^']+)'", re.IGNORECASE)
-
-    for file_name in os.listdir(folder_path):
-        if file_name.endswith(".json"):
-            file_path = os.path.join(folder_path, file_name)
-
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                for line in f:
-                    if not line.strip():
-                        continue
-                    try:
-                        # Isolate ASSET SERVICING blocks
-                        asset_blocks = asset_servicing_block.findall(line)
-
-                        for block in asset_blocks:
-                            intents = intent_pattern.findall(block)
-                            probs = prob_pattern.findall(block)
-
-                            # ClientRequestId may sit outside block
-                            client_ids = client_id_pattern.findall(line)
-
-                            for i, intent in enumerate(intents):
-                                prob = probs[i] if i < len(probs) else None
-                                client_id = client_ids[0] if client_ids else None
-                                records.append({
-                                    "intent": intent,
-                                    "probability": prob,
-                                    "clientRequestId": client_id,
-                                    "source_file": file_name
-                                })
-                    except Exception as e:
-                        print(f"Skipping bad line in {file_name}: {e}")
-                        continue
-
-    # Save results
-    df = pd.DataFrame(records)
-    df.to_excel(output_excel, index=False)
-    print(f"✅ Extraction complete. Saved {len(df)} rows to {output_excel}")
-
-
-# Example usage
-folder_path = r"C:\path\to\ndjson\files"
-extract_asset_servicing_regex(folder_path, "asset_servicing_regex_output.xlsx")
+Wishing you continued success, growth, and many more milestones ahead. May this be just the beginning of greater achievements in your career.
