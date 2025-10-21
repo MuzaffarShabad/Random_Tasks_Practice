@@ -1,3 +1,157 @@
+import requests
+import os
+import json
+import re
+import pandas as pd
+from datetime import datetime
+
+# ---------------------------------------------
+# Configuration
+# ---------------------------------------------
+url = "http://localhost:8092/bulk_intent/"  # Uvicorn endpoint
+ndjson_folder = r"path/to/ndjson_folder"  # Folder containing NDJSON files
+output_folder = "bulk_output"
+os.makedirs(output_folder, exist_ok=True)
+
+# ---------------------------------------------
+# Helper function to clean malformed NDJSON line
+# ---------------------------------------------
+def clean_json(line: str) -> str:
+    line = line.strip()
+    # Replace single quotes with double quotes
+    line = re.sub(r"'", '"', line)
+    # Fix trailing commas before closing braces/brackets
+    line = re.sub(r",\s*}", "}", line)
+    line = re.sub(r",\s*]", "]", line)
+    # Remove stray asterisks or unicode placeholders
+    line = line.replace("*", "").replace("u200a", "")
+    return line
+
+# ---------------------------------------------
+# Main processing
+# ---------------------------------------------
+all_results = []
+
+for file_name in os.listdir(ndjson_folder):
+    if not file_name.endswith(".json") and not file_name.endswith(".ndjson"):
+        continue
+    file_path = os.path.join(ndjson_folder, file_name)
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        lines = f.readlines()
+
+    for i, line in enumerate(lines):
+        if not line.strip():
+            continue
+        try:
+            cleaned_line = clean_json(line)
+            data = json.loads(cleaned_line)
+
+            # Default LOB to Asset Servicing
+            data["header"] = data.get("header", {})
+            data["header"]["lob"] = "Asset Servicing"
+
+            # Extract NLP_CLIENT_CASE_ID if exists
+            case_id = None
+            if "httpHeaders" in data and "NLP CLIENT CASE ID" in data["httpHeaders"]:
+                case_id = data["httpHeaders"]["NLP CLIENT CASE ID"]
+
+            # Send the cleaned JSON line to FastAPI endpoint
+            response = requests.post(url, files={"file": ("temp.ndjson", json.dumps(data), "application/x-ndjson")})
+
+            if response.status_code == 200:
+                resp_json = response.json()
+                # Add case_id and source file info
+                resp_json["NLP_CLIENT_CASE_ID"] = case_id
+                resp_json["source_file"] = file_name
+                all_results.append(resp_json)
+            else:
+                all_results.append({
+                    "error": f"Status {response.status_code} - {response.text}",
+                    "raw_line": line,
+                    "source_file": file_name
+                })
+
+        except Exception as e:
+            all_results.append({
+                "error": str(e),
+                "raw_line": line,
+                "source_file": file_name
+            })
+
+# ---------------------------------------------
+# Save output JSON + Excel
+# ---------------------------------------------
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+json_path = os.path.join(output_folder, f"bulk_results_{timestamp}.json")
+excel_path = os.path.join(output_folder, f"bulk_results_{timestamp}.xlsx")
+
+# Save JSON
+with open(json_path, "w", encoding="utf-8") as f:
+    json.dump(all_results, f, indent=4)
+
+# Save Excel (flatten nested dicts)
+df = pd.json_normalize(all_results, sep="_")
+df.to_excel(excel_path, index=False)
+
+print(f"✅ Done! Processed {len(all_results)} lines.")
+print(f"JSON output: {json_path}")
+print(f"Excel output: {excel_path}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 from fastapi import UploadFile, File
 import json
 import pandas as pd
