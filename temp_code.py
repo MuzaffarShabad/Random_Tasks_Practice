@@ -1,3 +1,61 @@
+
+def predict_intent_by_model(pre_processed_inquiry, lob):
+    if lob == ASSET_SERVICING_LOB:
+        model = as_model
+    else:
+        model = cash_set_mo_model
+
+    # Get prediction and probabilities
+    prediction = model.predict(pre_processed_inquiry)
+    proba = model.predict_proba(pre_processed_inquiry)[0]  # first sample
+
+    # Get all class labels
+    class_labels = model.classes_
+
+    # Combine into dictionary
+    all_probabilities = {label: round(prob * 100, 2) for label, prob in zip(class_labels, proba)}
+
+    intent = {
+        'sentence': 'N/A',
+        'intent': prediction[0],
+        'probability': round(max(proba) * 100, 2),
+        'all_probabilities': all_probabilities,   # ⬅️ added this line
+        'source': 'model'
+    }
+
+    return intent
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import os
 import json
 import requests
