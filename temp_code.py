@@ -10,13 +10,14 @@ OUTPUT_FOLDER = 'extracted_json_bodies'
 
 def extract_and_save_bodies(input_dir, output_dir):
     """
-    Reads all .json files in NDJSON format, extracts the first object 
-    inside the 'body' list, and saves it as a new file. Includes diagnostics.
+    Reads all .json files in NDJSON format, extracts the object 
+    under the 'body' key, and saves it as a new file.
     """
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
         print(f"Created output directory: {output_dir}")
 
+    # Search for all files with the .json extension
     file_pattern = os.path.join(input_dir, '*.json')
     input_files = glob.glob(file_pattern)
 
@@ -35,32 +36,27 @@ def extract_and_save_bodies(input_dir, output_dir):
                     continue
                     
                 try:
-                    # 1. Parse the NDJSON line (one complete JSON object)
+                    # 1. Parse the NDJSON line
                     record = json.loads(line)
                     
-                    # 2. Attempt to extract the target object
-                    body_list = record.get("body")
+                    # 2. Extract the target object from the 'body' key
+                    body_object = record.get("body")
                     
-                    # Check for existence, type, and content
-                    if not body_list or not isinstance(body_list, list) or not body_list:
-                        # --- DIAGNOSTIC CODE ADDED HERE ---
+                    # Check if 'body' exists and is a dictionary (JSON object)
+                    if not body_object or not isinstance(body_object, dict):
+                        # Use diagnostic to help identify potential key issues if needed
                         all_keys = list(record.keys())
-                        print(f"  [Warning] Line {line_number}: 'body' check failed.")
+                        print(f"  [Warning] Line {line_number}: 'body' not found or not an object.")
                         print(f"  [Diagnostic] Found keys: {all_keys}")
-                        # Print the value of a key if it looks like the body but is misspelled
-                        potential_body_keys = [k for k in all_keys if 'body' in k.lower()]
-                        if potential_body_keys:
-                            print(f"  [Diagnostic] Potential body key(s): {potential_body_keys}. Please inspect casing/spelling.")
                         print(f"  Skipping record.")
-                        # ----------------------------------
                         continue
                         
-                    # The object you want to save is the FIRST item in the list
-                    body_object = body_list[0] 
+                    # 3. Create a unique filename using 'clientRequestId'
+                    client_id = body_object.get("clientRequestId", f"record_{record_count+1}")
                     
-                    # 3. Create a unique filename
-                    client_id = body_object.get("clientRequestld", f"record_{record_count+1}")
-                    output_filename = f"{client_id}.json"
+                    # Clean the client ID to ensure it's a valid filename (e.g., replace spaces/colons)
+                    safe_client_id = client_id.replace(':', '_').replace('.', '_').replace(' ', '_')
+                    output_filename = f"{safe_client_id}.json"
                     output_filepath = os.path.join(output_dir, output_filename)
                     
                     # 4. Save the extracted object to the new file
@@ -70,9 +66,13 @@ def extract_and_save_bodies(input_dir, output_dir):
                     record_count += 1
                     
                 except json.JSONDecodeError as e:
-                    print(f"  [Error] Failed to decode JSON on line {line_number} in {os.path.basename(input_filepath)}. Check for malformed JSON structure: {e}")
+                    print(f"  [Error] Failed to decode JSON on line {line_number} in {os.path.basename(input_filepath)}: {e}")
                 except Exception as e:
                     print(f"  [Error] An unexpected error occurred on line {line_number}: {e}")
+
+    print(f"\n--- Processing Complete 🚀 ---")
+    print(f"Total objects extracted and saved: {record_count}")
+    print(f"Files saved to: {os.path.abspath(output_dir)}")
 
 # Run the process
 extract_and_save_bodies(INPUT_FOLDER, OUTPUT_FOLDER)
