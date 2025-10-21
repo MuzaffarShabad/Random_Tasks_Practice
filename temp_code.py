@@ -7,14 +7,16 @@ import glob
 INPUT_FOLDER = 'your_data_folder' 
 OUTPUT_FOLDER = 'extracted_json_bodies'
 
-# --- NEW: Key-Value Pair to Add to EVERY Extracted JSON ---
-NEW_KEY_VALUE = {"lob": "as"}
-# -----------------------------------------------------------
+# --- NEW: Key-Value Pair to Add and its DESTINATION ---
+NEW_KEY = "lob"
+NEW_VALUE = "as"
+TARGET_NESTED_KEY = "header"
+# -------------------------------------------------------
 
-def extract_and_save_bodies_with_new_key(input_dir, output_dir, new_kv):
+def extract_and_save_bodies_with_lob_in_header(input_dir, output_dir, key, value, target_key):
     """
     Reads all .json files in NDJSON format, extracts the object 
-    under the 'body' key, adds a new key-value pair, and saves it as a new file.
+    under the 'body' key, and adds the specified key-value pair into the nested 'header' object.
     """
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
@@ -48,11 +50,16 @@ def extract_and_save_bodies_with_new_key(input_dir, output_dir, new_kv):
                         print(f"  [Warning] Line {line_number}: 'body' not found or not an object. Skipping.")
                         continue
                     
-                    # 3. ADD THE NEW KEY-VALUE PAIR
-                    # This merges the NEW_KEY_VALUE dictionary into the extracted body_object
-                    body_object.update(new_kv)
+                    # 3. LOCATE THE TARGET NESTED OBJECT (the "header")
+                    header_object = body_object.get(target_key)
+
+                    if not header_object or not isinstance(header_object, dict):
+                         print(f"  [Warning] Line {line_number}: Target key '{target_key}' not found or not an object inside 'body'. Skipping key addition.")
+                    else:
+                        # 4. ADD THE NEW KEY-VALUE PAIR INSIDE THE HEADER
+                        header_object[key] = value
                     
-                    # 4. Create a unique filename using 'clientRequestId'
+                    # 5. Create a unique filename using 'clientRequestId'
                     client_id = body_object.get("clientRequestId", f"record_{record_count+1}")
                     
                     # Clean the client ID for a safe filename
@@ -60,7 +67,7 @@ def extract_and_save_bodies_with_new_key(input_dir, output_dir, new_kv):
                     output_filename = f"{safe_client_id}.json"
                     output_filepath = os.path.join(output_dir, output_filename)
                     
-                    # 5. Save the modified object to the new file
+                    # 6. Save the modified object to the new file
                     with open(output_filepath, 'w', encoding='utf-8') as out_f:
                         json.dump(body_object, out_f, indent=4)
                         
@@ -76,4 +83,6 @@ def extract_and_save_bodies_with_new_key(input_dir, output_dir, new_kv):
     print(f"Files saved to: {os.path.abspath(output_dir)}")
 
 # Run the process
-extract_and_save_bodies_with_new_key(INPUT_FOLDER, OUTPUT_FOLDER, NEW_KEY_VALUE)
+extract_and_save_bodies_with_lob_in_header(
+    INPUT_FOLDER, OUTPUT_FOLDER, NEW_KEY, NEW_VALUE, TARGET_NESTED_KEY
+)
