@@ -1,97 +1,92 @@
 import json
+import requests
+import pandas as pd
 import os
 import glob
 
 # --- Configuration ---
-# IMPORTANT: Change 'your_data_folder' to the actual name of your folder
-INPUT_FOLDER = 'your_data_folder' 
-OUTPUT_FOLDER = 'extracted_json_bodies'
+API_URL = "http://127.0.0.1:8092/intent"
+INPUT_FOLDER = r"C:\Projects_Local_Small_Tasks\extracted_json_bodies_1" # Folder containing your JSON files
+OUTPUT_FILE = "combined_api_responses.xlsx"
+# ---------------------
 
-# --- NEW: Key-Value Pair and its EXACT STRUCTURE and DESTINATION ---
-NEW_KEY = "LOB"
-NEW_VALUE = ["as"] # Note: The value is now a list
-TARGET_NESTED_KEY_1 = "header"
-TARGET_NESTED_KEY_2 = "metadata"
-# -------------------------------------------------------------------
-
-def extract_and_save_bodies_with_lob_in_metadata(input_dir, output_dir, key, value, target_key_1, target_key_2):
+def process_json_folder_to_excel(input_dir, api_url, output_file):
     """
-    Reads all .json files in NDJSON format, extracts the object 
-    under the 'body' key, and adds the specified key-value pair into the nested 'metadata' object.
+    Sends each JSON file in the input directory to the API endpoint,
+    collects the responses, and saves them to a single Excel file.
     """
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-        print(f"Created output directory: {output_dir}")
-
+    
+    # 1. Find all JSON files in the input folder
     file_pattern = os.path.join(input_dir, '*.json')
-    input_files = glob.glob(file_pattern)
+    json_files = glob.glob(file_pattern)
 
-    if not input_files:
+    if not json_files:
         print(f"❌ Error: No .json files found in the directory: {input_dir}")
         return
 
-    record_count = 0
+    all_responses = []
+    success_count = 0
     
-    for input_filepath in input_files:
-        print(f"\nProcessing file: {os.path.basename(input_filepath)}")
+    print(f"Found {len(json_files)} files to process. Starting API calls...")
+
+    # 2. Iterate through each file and send the POST request
+    for file_path in json_files:
+        file_name = os.path.basename(file_path)
+        print(f"  Processing: {file_name}...")
         
-        with open(input_filepath, 'r', encoding='utf-8') as f:
-            for line_number, line in enumerate(f, 1):
-                if not line.strip():
-                    continue
-                    
-                try:
-                    # 1. Parse the NDJSON line
-                    record = json.loads(line)
-                    
-                    # 2. Extract the target object from the 'body' key
-                    body_object = record.get("body")
-                    
-                    if not body_object or not isinstance(body_object, dict):
-                        print(f"  [Warning] Line {line_number}: 'body' not found or not an object. Skipping.")
-                        continue
-                    
-                    # 3. TRAVERSE TO THE TARGET LOCATION (header -> metadata)
-                    
-                    # Level 1: Get the 'header'
-                    header_object = body_object.get(target_key_1)
-                    if not header_object or not isinstance(header_object, dict):
-                         print(f"  [Warning] Line {line_number}: Target key '{target_key_1}' not found or not an object. Skipping key addition.")
-                         continue
-                            
-                    # Level 2: Get the 'metadata'
-                    metadata_object = header_object.get(target_key_2)
-                    if not metadata_object or not isinstance(metadata_object, dict):
-                         print(f"  [Warning] Line {line_number}: Target key '{target_key_2}' not found or not an object inside '{target_key_1}'. Skipping key addition.")
-                         continue
+        try:
+            # Load the JSON data from the file
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            
+            # Send data to FastAPI
+            response = requests.post(api_url, json=data)
+            
+            # Raise an HTTPError if the status code is 4xx or 5xx
+            response.raise_for_status() 
 
-                    # 4. INSERT THE NEW KEY-VALUE PAIR INTO 'metadata'
-                    metadata_object[key] = value
-                    
-                    # 5. Create a unique filename using 'clientRequestId'
-                    client_id = body_object.get("clientRequestId", f"record_{record_count+1}")
-                    
-                    # Clean the client ID for a safe filename
-                    safe_client_id = client_id.replace(':', '_').replace('.', '_').replace(' ', '_')
-                    output_filename = f"{safe_client_id}.json"
-                    output_filepath = os.path.join(output_dir, output_filename)
-                    
-                    # 6. Save the modified object to the new file
-                    with open(output_filepath, 'w', encoding='utf-8') as out_f:
-                        json.dump(body_object, out_f, indent=4)
-                        
-                    record_count += 1
-                    
-                except json.JSONDecodeError as e:
-                    print(f"  [Error] Failed to decode JSON on line {line_number} in {os.path.basename(input_filepath)}: {e}")
-                except Exception as e:
-                    print(f"  [Error] An unexpected error occurred on line {line_number}: {e}")
+            # Get the JSON response from the API
+            json_response = response.json()
+            
+            # --- IMPORTANT: Standardize the response structure ---
+            # FastAPI often returns a list of objects or a single object.
+            # We assume it returns a list or a dictionary. If it returns a list, 
+            # we extend the main list; if it returns a dictionary, we append it.
+            if isinstance(json_response, list):
+                all_responses.extend(json_response)
+            elif isinstance(json_response, dict):
+                all_responses.append(json_response)
+            else:
+                print(f"  [Warning] API response for {file_name} was unexpected type ({type(json_response)}). Skipping.")
+                continue
 
-    print(f"\n--- Processing Complete 🚀 ---")
-    print(f"Total objects extracted and saved: {record_count}")
-    print(f"Files saved to: {os.path.abspath(output_dir)}")
+            success_count += 1
+            
+        except FileNotFoundError:
+            print(f"  [Error] File not found: {file_path}")
+        except requests.exceptions.RequestException as e:
+            print(f"  [Error] API call failed for {file_name}. Status: {response.status_code if 'response' in locals() else 'N/A'}. Error: {e}")
+        except json.JSONDecodeError:
+            print(f"  [Error] Failed to decode JSON from API response for {file_name}.")
+        except Exception as e:
+            print(f"  [Error] An unexpected error occurred while processing {file_name}: {e}")
 
-# Run the process
-extract_and_save_bodies_with_lob_in_metadata(
-    INPUT_FOLDER, OUTPUT_FOLDER, NEW_KEY, NEW_VALUE, TARGET_NESTED_KEY_1, TARGET_NESTED_KEY_2
-)
+    print(f"\n--- Processing Complete ---")
+    print(f"Successfully received {success_count} responses.")
+    
+    # 3. Create DataFrame and Export to Excel
+    if all_responses:
+        try:
+            # Create a Pandas DataFrame from the list of dictionaries
+            df = pd.DataFrame(all_responses)
+            
+            # Export to Excel
+            df.to_excel(output_file, index=False)
+            print(f"✅ Success! All data combined and exported to: {os.path.abspath(output_file)}")
+        except Exception as e:
+            print(f"❌ Error: Failed to create or export Excel file: {e}")
+    else:
+        print("No valid responses were collected. Excel file not created.")
+
+# Execute the main function
+process_json_folder_to_excel(INPUT_FOLDER, API_URL, OUTPUT_FILE)
